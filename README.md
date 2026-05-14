@@ -3,9 +3,9 @@
 [![CI](https://github.com/XaCaMaCa/queue-broker-go-test/actions/workflows/ci.yml/badge.svg)](https://github.com/XaCaMaCa/queue-broker-go-test/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/go-1.22-blue.svg)](https://go.dev/)
 
-Минимальный HTTP-брокер очередей в памяти: **FIFO**, **long-polling** с таймаутом, **per-queue** воркер (одна горутина на очередь), **graceful shutdown** (SIGINT/SIGTERM), структурные логи через `slog`.
+Минимальный HTTP-брокер очередей в памяти: **FIFO**, **long-polling** с таймаутом, **per-queue** воркер (одна горутина на очередь), **graceful shutdown** (SIGINT/SIGTERM), структурные логи через `slog`, метрики **Prometheus** на `/metrics`.
 
-Изначально тестовое задание; дальше доработано под продакшен-практики: тесты (unit, HTTP, конкурентность), корректное завершение и ответ **503** при остановке.
+Изначально тестовое задание; дальше доработано под продакшен-практики: тесты (unit, HTTP, конкурентность), корректное завершение, ответ **503** при остановке, счётчики и гистограммы для наблюдаемости.
 
 ## API
 
@@ -19,6 +19,25 @@
 | другие методы | `/{queue}` | **405** |
 
 При остановке сервера после сигнала: новые `PUT`/`GET` с ожиданием → **503 Service Unavailable**.
+
+## Метрики (Prometheus)
+
+Эндпоинт **`GET /metrics`** отдаёт текст в формате exposition Prometheus (регистр по умолчанию).
+
+| Имя | Тип | Назначение |
+|-----|-----|------------|
+| `queuebroker_http_requests_total` | counter | HTTP-запросы по `method` и `code` (включая `/metrics`). |
+| `queuebroker_longpoll_wait_seconds` | histogram | Время от входа в long-poll до ответа (успех, таймаут или shutdown после ожидания). |
+| `queuebroker_messages_enqueued_total` | counter | Успешные `PUT` после записи в очередь. |
+| `queuebroker_messages_delivered_total` | counter | Ответы `200` с телом сообщения (`GET`). |
+
+Имена очередей в лейблы **не выводятся** (чтобы не раздувать кардинальность).
+
+Пример:
+
+```bash
+curl -s "http://localhost:8080/metrics" | findstr queuebroker
+```
 
 ## Запуск
 
@@ -68,7 +87,9 @@ go test -v ./...
 
 ```mermaid
 flowchart TB
-  HTTP[net/http] --> H[makeQueueHandler]
+  HTTP[net/http] --> MW[metricsMiddleware]
+  MW --> METRICS["/metrics Prometheus"]
+  MW --> H[makeQueueHandler]
   H --> B[broker.queue name]
   B --> Q[queue per name]
   Q --> W[worker goroutine]
@@ -103,16 +124,21 @@ sequenceDiagram
 
 | Файл | Назначение |
 |------|------------|
-| `main.go` | Брокер, очередь, HTTP, graceful shutdown, `slog` |
+| `main.go` | Брокер, очередь, HTTP, `newAppHandler`, graceful shutdown, `slog` |
+| `metrics.go` | Prometheus: счётчики, гистограмма long-poll, middleware, `/metrics` |
 | `broker_test.go` | Unit-тесты FIFO, таймаут, waiters, shutdown |
-| `http_test.go` | Интеграционные тесты через `httptest` |
+| `http_test.go` | Интеграционные тесты через `httptest`, в т.ч. `/metrics` |
 | `concurrent_test.go` | Конкурентные сценарии без потери сообщений |
+
+Зависимости фиксируются в **`go.sum`** (нужен в репозитории для воспроизводимых сборок и CI).
 
 ## Модуль
 
 ```text
 module queuebroker
 go 1.22
+
+require github.com/prometheus/client_golang v1.20.5
 ```
 
 ## Использование кода

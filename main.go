@@ -277,6 +277,7 @@ func handlePut(w http.ResponseWriter, r *http.Request, q *queue) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
+	messagesEnqueuedTotal.Inc()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -287,7 +288,9 @@ func handleGet(w http.ResponseWriter, r *http.Request, q *queue) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		waitStart := time.Now()
 		msg, err := q.dequeueWait(time.Duration(sec) * time.Second)
+		longPollWaitSeconds.Observe(time.Since(waitStart).Seconds())
 		if err != nil {
 			if errors.Is(err, errShutdown) {
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -312,16 +315,22 @@ func handleGet(w http.ResponseWriter, r *http.Request, q *queue) {
 }
 
 func writeBody(w http.ResponseWriter, msg string) {
+	messagesDeliveredTotal.Inc()
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(msg))
 }
 
-func newServer(addr string, b *broker) *http.Server {
+func newAppHandler(b *broker) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", metricsHandler())
 	mux.Handle("/", makeQueueHandler(b))
+	return metricsMiddleware(mux)
+}
+
+func newServer(addr string, b *broker) *http.Server {
 	return &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           newAppHandler(b),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 }

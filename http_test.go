@@ -12,7 +12,7 @@ import (
 func newTestServer(t *testing.T) (*broker, *httptest.Server) {
 	t.Helper()
 	b := newBroker()
-	srv := httptest.NewServer(makeQueueHandler(b))
+	srv := httptest.NewServer(newAppHandler(b))
 	t.Cleanup(func() {
 		srv.Close()
 		b.close()
@@ -156,5 +156,24 @@ func TestHTTPShutdownReturns503(t *testing.T) {
 	resp, _ := do(t, http.MethodPut, srv.URL+"/foo?v=x")
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status: got %d, want 503", resp.StatusCode)
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	_, srv := newTestServer(t)
+	resp, body := do(t, http.MethodGet, srv.URL+"/metrics")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /metrics: got %d, want 200", resp.StatusCode)
+	}
+	want := []string{
+		"queuebroker_http_requests_total",
+		"queuebroker_longpoll_wait_seconds",
+		"queuebroker_messages_enqueued_total",
+		"queuebroker_messages_delivered_total",
+	}
+	for _, s := range want {
+		if !strings.Contains(body, s) {
+			t.Fatalf("metrics body missing %q", s)
+		}
 	}
 }
