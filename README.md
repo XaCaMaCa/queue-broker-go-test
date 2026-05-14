@@ -45,6 +45,18 @@ curl -s "http://localhost:8080/metrics" | findstr queuebroker
 go run . 8080
 ```
 
+Через **Make** (порт по умолчанию `8080`, переопределение: `make run PORT=9090`):
+
+```bash
+make run
+make test
+make fmt
+make vet
+make tidy
+make build   # бинарник queuebroker (на Windows — queuebroker.exe, в .gitignore)
+make lint    # нужен golangci-lint в PATH
+```
+
 Пример:
 
 ```bash
@@ -129,6 +141,8 @@ sequenceDiagram
 | `broker_test.go` | Unit-тесты FIFO, таймаут, waiters, shutdown |
 | `http_test.go` | Интеграционные тесты через `httptest`, в т.ч. `/metrics` |
 | `concurrent_test.go` | Конкурентные сценарии без потери сообщений |
+| `Makefile` | Локальные цели: `run`, `test`, `fmt`, `vet`, `tidy`, `build`, `lint` |
+| `.github/workflows/ci.yml` | CI: tidy, golangci-lint, тесты с `-race`, сборка |
 
 Зависимости фиксируются в **`go.sum`** (нужен в репозитории для воспроизводимых сборок и CI).
 
